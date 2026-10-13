@@ -1,18 +1,18 @@
-import CONFIG from './config';
+import CONFIG from './config.js';
 
 const headers = {
   'Authorization': 'Bearer ' + CONFIG.TOKEN,
   'Content-Type': 'application/json'
 };
 
-function url(tableId) {
+function tableUrl(tableId) {
   return CONFIG.API_URL + '/databases/' + CONFIG.DATABASE_ID + '/tables/' + tableId + '/records';
 }
 
 async function request(method, tableId, body, recordId) {
-  let fullUrl = url(tableId);
+  let fullUrl = tableUrl(tableId);
   if (recordId) fullUrl += '/' + recordId;
-  const options = { method, headers };
+  const options = { method: method, headers: headers };
   if (body) options.body = JSON.stringify(body);
   const res = await fetch(fullUrl, options);
   return await res.json();
@@ -31,20 +31,21 @@ export async function createRoom(roomCode, mode, judgeId) {
 
 export async function findRoomByCode(roomCode) {
   const where = encodeURIComponent('(room_code,eq,' + roomCode + ')');
-  const fullUrl = url(CONFIG.TABLES.ROOMS) + '?where=' + where + '&response_format=names';
-  const res = await fetch(fullUrl, { headers });
+  const fullUrl = tableUrl(CONFIG.TABLES.ROOMS) + '?where=' + where + '&response_format=names';
+  const res = await fetch(fullUrl, { headers: headers });
   const data = await res.json();
   return data.data.records[0];
 }
 
-export async function finishRoom(recordId, deleteAt) {
+export async function finishRoomRecord(recordId) {
+  const deleteAt = Math.floor(Date.now() / 1000) + 3600;
   return request('PUT', CONFIG.TABLES.ROOMS, {
     status: 'finished',
     delete_at: deleteAt
   }, recordId);
 }
 
-export async function deleteRoom(recordId) {
+export async function deleteRoomRecord(recordId) {
   return request('DELETE', CONFIG.TABLES.ROOMS, null, recordId);
 }
 
@@ -60,8 +61,8 @@ export async function addPlayer(roomCode, nickname, avatarUrl, role) {
 
 export async function getPlayers(roomCode) {
   const where = encodeURIComponent('(room_code,eq,' + roomCode + ')');
-  const fullUrl = url(CONFIG.TABLES.PLAYERS) + '?where=' + where + '&response_format=names';
-  const res = await fetch(fullUrl, { headers });
+  const fullUrl = tableUrl(CONFIG.TABLES.PLAYERS) + '?where=' + where + '&response_format=names';
+  const res = await fetch(fullUrl, { headers: headers });
   const data = await res.json();
   return data.data.records;
 }
@@ -78,8 +79,8 @@ export async function addEvidence(roomCode, authorId, title, imageUrl) {
 
 export async function getEvidence(roomCode) {
   const where = encodeURIComponent('(room_code,eq,' + roomCode + ')');
-  const fullUrl = url(CONFIG.TABLES.EVIDENCE) + '?where=' + where + '&response_format=names';
-  const res = await fetch(fullUrl, { headers });
+  const fullUrl = tableUrl(CONFIG.TABLES.EVIDENCE) + '?where=' + where + '&response_format=names';
+  const res = await fetch(fullUrl, { headers: headers });
   const data = await res.json();
   return data.data.records;
 }
@@ -96,8 +97,8 @@ export async function sendMessage(roomCode, playerId, nickname, text) {
 
 export async function getMessages(roomCode) {
   const where = encodeURIComponent('(room_code,eq,' + roomCode + ')');
-  const fullUrl = url(CONFIG.TABLES.MESSAGES) + '?where=' + where + '&sort=created_at&response_format=names';
-  const res = await fetch(fullUrl, { headers });
+  const fullUrl = tableUrl(CONFIG.TABLES.MESSAGES) + '?where=' + where + '&response_format=names';
+  const res = await fetch(fullUrl, { headers: headers });
   const data = await res.json();
   return data.data.records;
 }
