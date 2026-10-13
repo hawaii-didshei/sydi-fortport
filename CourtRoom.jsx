@@ -4,8 +4,11 @@ import {
   getEvidence,
   getMessages,
   sendMessage,
-  addEvidence
-} from './api';
+  addEvidence,
+  findRoomByCode,
+  finishRoomRecord
+} from './api.js';
+import { compressImage } from './avatar.js';
 
 const SLOTS = {
   judge:      { top: '25%', left: '50%', transform: 'translateX(-50%)' },
@@ -13,6 +16,16 @@ const SLOTS = {
   advocate:   { top: '65%', left: '15%', transform: 'translateX(-50%)' },
   victim:     { top: '55%', left: '75%', transform: 'translateX(-50%)' },
   defendant:  { top: '65%', left: '85%', transform: 'translateX(-50%)' }
+};
+
+const ROLE_LABELS = {
+  judge: 'СУДЬЯ',
+  prosecutor: 'ПРОКУРОР',
+  advocate: 'АДВОКАТ',
+  victim: 'ЖЕРТВА',
+  defendant: 'ПОДСУДИМЫЙ',
+  witness: 'СВИДЕТЕЛЬ',
+  spectator: 'ЗРИТЕЛЬ'
 };
 
 export default function CourtRoom({ roomCode, currentUser }) {
@@ -24,11 +37,20 @@ export default function CourtRoom({ roomCode, currentUser }) {
   const [newMessage, setNewMessage] = useState('');
   const [evidenceTitle, setEvidenceTitle] = useState('');
   const [evidenceFile, setEvidenceFile] = useState(null);
+  const [roomRecordId, setRoomRecordId] = useState(null);
+  const [finished, setFinished] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
 
-  useEffect(() => {
+  useEffect(function() {
     loadAll();
+    findRoomByCode(roomCode).then(function(room) {
+      if (room) {
+        setRoomRecordId(room.id);
+        if (room.status === 'finished') setFinished(true);
+      }
+    });
     const interval = setInterval(loadAll, 3000);
-    return () => clearInterval(interval);
+    return function() { clearInterval(interval); };
   }, [roomCode]);
 
   async function loadAll() {
@@ -49,98 +71,126 @@ export default function CourtRoom({ roomCode, currentUser }) {
 
   async function handleAddEvidence() {
     if (!evidenceTitle || !evidenceFile) return;
-    const imageUrl = await uploadImage(evidenceFile);
+    const imageUrl = await compressImage(evidenceFile, 400);
     await addEvidence(roomCode, currentUser.player_id, evidenceTitle, imageUrl);
     setEvidenceTitle('');
     setEvidenceFile(null);
     loadAll();
   }
 
-  async function uploadImage(file) {
-    return 'https://example.com/placeholder.jpg';
+  async function handleFinish() {
+    if (!roomRecordId) return;
+    if (!window.confirm('Огласить приговор и завершить суд?')) return;
+    await finishRoomRecord(roomRecordId);
+    setFinished(true);
+    alert('Суд завершён. Комната будет удалена через час.');
   }
 
+  function handleCopyInvite() {
+    const link = window.location.origin + '/?room=' + roomCode;
+    navigator.clipboard.writeText(link);
+    setInviteCopied(true);
+    setTimeout(function() { setInviteCopied(false); }, 2000);
+  }
+
+  const canAddEvidence = ['prosecutor', 'advocate', 'victim'].indexOf(currentUser.role) !== -1;
+  const canFinish = currentUser.role === 'judge' && !finished;
+  const spectators = players.filter(function(p) {
+    return p.role === 'spectator' || p.role === 'witness';
+  });
+
   return (
-    <div
-      className="relative w-full h-screen bg-cover bg-center overflow-hidden"
-      style={{ backgroundImage: "url('/court-bg.png')" }}
-    >
+    <div className="court-room" style={{ backgroundImage: "url('/court-bg.png')" }}>
       {players.map(function(player) {
         const slot = SLOTS[player.role];
         if (!slot) return null;
         return (
-          <div
-            key={player.id}
-            className="absolute flex flex-col items-center"
-            style={{ top: slot.top, left: slot.left, transform: slot.transform }}
-          >
-            <img
-              src={player.avatar_url}
-              alt={player.nickname}
-              className="w-20 h-20 rounded-full border-4 border-yellow-600 object-cover"
-            />
-            <span className="mt-1 bg-black text-white px-2 rounded text-sm">
-              {player.nickname}
-            </span>
+          <div key={player.id} className="player-slot" style={slot}>
+            <img className="player-avatar" src={player.avatar_url} alt={player.nickname} />
+            <span className="player-name">{player.nickname}</span>
+            <span className="player-role">{ROLE_LABELS[player.role]}</span>
           </div>
         );
       })}
 
-      <button
-        onClick={() => setIsEvidenceOpen(true)}
-        className="absolute bottom-6 left-6 bg-red-700 text-white p-3 rounded"
-      >
+      {spectators.length > 0 && (
+        <div className="spectator-window">
+          <h3>Зрители и свидетели</h3>
+          {spectators.map(function(s) {
+            return (
+              <div key={s.id} className="spectator-item">
+                <img src={s.avatar_url} alt={s.nickname} />
+                <span>{s.nickname}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <button className="btn-evidence" onClick={() => setIsEvidenceOpen(true)}>
+        <img src="/evidence.png" alt="" />
         Улики ({evidence.length})
       </button>
 
-      <button
-        onClick={() => setIsChatOpen(true)}
-        className="absolute bottom-6 right-6 bg-blue-700 text-white p-3 rounded"
-      >
+      <button className="btn-chat" onClick={() => setIsChatOpen(true)}>
+        <img src="/chat.png" alt="" />
         Чат
       </button>
 
-      {isEvidenceOpen && (
-        <div className="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
-          <div className="bg-gray-900 text-white p-6 rounded w-3/4 max-w-2xl">
-            <button
-              onClick={() => setIsEvidenceOpen(false)}
-              className="float-right text-red-500 text-xl"
-            >
-              X
-            </button>
-            <h2 className="text-xl font-bold mb-4">Улики</h2>
+      <button className="btn-finish" onClick={handleCopyInvite} style={{ bottom: 24, left: '50%' }}>
+        {inviteCopied ? 'Ссылка скопирована' : 'Пригласить'}
+      </button>
 
-            {['prosecutor', 'advocate', 'victim'].indexOf(currentUser.role) !== -1 && (
-              <div className="mb-4">
+      {canFinish && (
+        <button className="btn-finish" onClick={handleFinish} style={{ bottom: 80, left: '50%' }}>
+          Огласить приговор
+        </button>
+      )}
+
+      {finished && (
+        <div style={{
+          position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(0,0,0,0.8)', padding: '10px 20px', borderRadius: 6,
+          border: '2px solid #b8860b', color: '#f0c040', fontWeight: 'bold'
+        }}>
+          Суд завершён
+        </div>
+      )}
+
+      {isEvidenceOpen && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <button className="modal-close" onClick={() => setIsEvidenceOpen(false)}>X</button>
+            <h2 className="modal-title">Улики</h2>
+
+            {canAddEvidence && !finished && (
+              <div className="evidence-form">
                 <input
                   type="text"
-                  placeholder="Подпись"
+                  placeholder="Подпись к улике"
                   value={evidenceTitle}
                   onChange={(e) => setEvidenceTitle(e.target.value)}
-                  className="p-2 bg-gray-800 text-white w-full mb-2"
                 />
                 <input
                   type="file"
                   accept="image/*"
                   onChange={(e) => setEvidenceFile(e.target.files[0])}
-                  className="mb-2"
                 />
-                <button
-                  onClick={handleAddEvidence}
-                  className="bg-green-600 text-white p-2 rounded w-full"
-                >
-                  Добавить
+                <button className="btn-add-evidence" onClick={handleAddEvidence}>
+                  Добавить улику
                 </button>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
+            <div className="evidence-grid">
+              {evidence.length === 0 && (
+                <p className="evidence-empty">Улик пока нет</p>
+              )}
               {evidence.map(function(ev) {
                 return (
-                  <div key={ev.id} className="bg-gray-800 p-2 rounded">
-                    <img src={ev.image_url} alt={ev.title} className="w-full h-32 object-cover" />
-                    <p className="font-bold text-sm mt-1">{ev.title}</p>
+                  <div key={ev.id} className="evidence-card">
+                    <img src={ev.image_url} alt={ev.title} />
+                    <p className="evidence-card-title">{ev.title}</p>
                   </div>
                 );
               })}
@@ -150,31 +200,31 @@ export default function CourtRoom({ roomCode, currentUser }) {
       )}
 
       {isChatOpen && (
-        <div className="absolute bottom-20 right-6 w-80 h-96 bg-gray-900 text-white rounded flex flex-col z-50">
-          <div className="flex justify-between p-2 bg-blue-800">
+        <div className="chat-window">
+          <div className="chat-header">
             <span>Чат</span>
             <button onClick={() => setIsChatOpen(false)}>X</button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="chat-messages">
             {messages.map(function(msg, i) {
               return (
-                <div key={i} className="mb-1">
-                  <span className="text-blue-400">{msg.nickname}: </span>
+                <div key={i} className="chat-message">
+                  <span className="chat-message-author">{msg.nickname}: </span>
                   {msg.text}
                 </div>
               );
             })}
           </div>
-          <div className="p-2 flex gap-2">
+          <div className="chat-input-row">
             <input
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              className="flex-1 p-1 bg-gray-800 text-white"
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }}
+              disabled={finished}
+              placeholder={finished ? 'Суд завершён' : ''}
             />
-            <button onClick={handleSendMessage} className="bg-blue-600 p-1 rounded">
-              Отправить
-            </button>
+            <button onClick={handleSendMessage} disabled={finished}>Отправить</button>
           </div>
         </div>
       )}
