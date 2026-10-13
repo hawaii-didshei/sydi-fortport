@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { createRoom } from './api';
+import { createRoom } from './api.js';
 
 export default function CreateRoom({ onCreated }) {
   const [mode, setMode] = useState('with_victim');
@@ -7,24 +7,22 @@ export default function CreateRoom({ onCreated }) {
   async function handleCreate() {
     const roomCode = 'court-' + Math.random().toString(36).substring(2, 8);
     const judgeId = 'judge-' + Date.now();
-    await createRoom(roomCode, mode, judgeId);
-    onCreated(roomCode, judgeId);
+    const result = await createRoom(roomCode, mode, judgeId);
+    const recordId = result.data ? result.data.id : null;
+    onCreated(roomCode, judgeId, recordId);
   }
 
   return (
-    <div className="p-6 max-w-md mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Создать суд</h1>
-      <select
-        value={mode}
-        onChange={(e) => setMode(e.target.value)}
-        className="border p-2 w-full mb-4"
-      >
-        <option value="with_victim">С жертвой</option>
-        <option value="only_defendant">Только подсудимый</option>
-      </select>
-      <button onClick={handleCreate} className="bg-green-600 text-white p-2 w-full">
-        Создать
-      </button>
+    <div className="create-page">
+      <h1>Создать суд</h1>
+      <div className="join-field">
+        <label>Режим</label>
+        <select value={mode} onChange={(e) => setMode(e.target.value)}>
+          <option value="with_victim">С жертвой</option>
+          <option value="only_defendant">Только подсудимый</option>
+        </select>
+      </div>
+      <button className="btn-create" onClick={handleCreate}>Создать</button>
     </div>
   );
 }
